@@ -1,130 +1,195 @@
-# House-Price-Prediction-and-Cross-City-Generalization
-# Cross-Market Transfer Learning & Bayesian House Price Prediction
+# House Price Regression Pipeline
+### MA2221 – Mathematics for Machine Learning
 
-Can a house-price model learned in one market predict prices in another?
-This project answers that in three phases, building every estimator from the
-linear-algebra up (normal equations, closed-form Ridge, coordinate-descent
-Lasso, conjugate Bayesian linear regression) rather than calling a library `fit`.
+A three-phase regression project implementing OLS, Ridge, and Lasso from scratch, applied to Indian and US (Ames) housing datasets, culminating in cross-market transfer learning with Bayesian uncertainty quantification.
 
-Course project for **MA2221 – Mathematics for Machine Learning**, Mahindra University.
-Theory follows *Mathematics for Machine Learning* (Deisenroth, Faisal & Ong, 2020).
+---
 
-| Phase | Question | Method | Headline result |
-|---|---|---|---|
-| [1. Regularised regression](phase1_regularised_regression/) | How well do OLS, Ridge and Lasso price houses in one Indian market? | 5-fold CV, λ sweep, regularisation paths | 5-fold RMSE ≈ **0.123** (log-price) for all three; Lasso keeps Area + city tier as main drivers |
-| [2. City-stratified generalisation](phase2_city_stratified/) | Does the model generalise to a city it has never seen? | Leave-One-City-Out CV, PCA of cities | Held-out RMSE **0.31–0.71**; New York is hardest, and Lasso cuts its error most |
-| [3. Cross-market transfer](phase3_cross_market_transfer/) | Do pricing rules transfer from India to the USA (Ames, Iowa)? | Feature alignment, weight-vector cosine similarity, Bayesian LR | Coefficient **shape** transfers (cosine similarity **0.93**), but price **level** does not (transfer RMSE ≈ 6.3) |
-
-## Key findings
-
-**1. What transfers is the shape of pricing, not the level.**
-Ridge weight vectors trained separately on India and Ames point in almost the
-same direction (cosine similarity 0.93): area dominates, bedrooms and bathrooms
-add a little. Yet India→Ames transfer RMSE is ~6.3 on the log scale. That gap is
-almost exactly the difference in mean log-price between the markets
-(18.80 for rupees − 12.48 for dollars = 6.32), so the error is an
-intercept/currency offset, not a failure of the learned relationships.
-
-![Weight comparison](phase3_cross_market_transfer/figures/p3_plot2_weight_comparison.png)
-
-**2. Bayesian uncertainty does not know it is out of distribution.**
-The conjugate-Gaussian posterior gives the same predictive σ (≈0.20) on Ames as
-on India, even though the transfer error is ~31× that σ. Predictive variance depends on the
-feature geometry (XᵀX), which is identical after standardisation, not on the
-shift in target scale. A market-specific scale prior would be needed for
-honest intervals.
-
-![Bayesian intervals](phase3_cross_market_transfer/figures/p3_plot3_bayesian_intervals.png)
-
-**3. Regularisation pays off where the unseen market is most different.**
-With Leave-One-City-Out CV, OLS wins 5 of 7 held-out cities, but Lasso has the
-lowest mean RMSE (0.434 vs 0.443) because it cuts New York's error from 0.71
-to 0.60. New York is also the outlier in the PCA of city profiles, i.e. the
-city furthest from the training distribution.
-
-![RMSE by held-out city](phase2_city_stratified/figures/plot_rmse_by_city.png)
-
-## Repository structure
+## Project Structure
 
 ```
-├── phase1_regularised_regression/
-│   ├── house_price_regression.py    OLS / Ridge (scratch) + Lasso, 5-fold CV, 8 plots
-│   ├── figures/                     EDA and model plots from the Kaggle run
-│   └── results/output.txt           console output of that run
-├── phase2_city_stratified/
-│   ├── city_stratified_pipeline.py  LOCO-CV, scratch Lasso (coordinate descent), PCA
-│   ├── figures/                     4 plots
-│   ├── report/phase2_report.pdf     written report
-│   └── results/output.txt
-├── phase3_cross_market_transfer/
-│   ├── cross_market_transfer.py     feature alignment, transfer, Bayesian LR
-│   ├── figures/                     8 plots
-│   └── results/output.txt
-├── requirements.txt
-└── README.md
+.
+├── part1_regression_pipeline.py   # Phase 1 – OLS, Ridge, Lasso from scratch (Ames Housing)
+├── Phase_02_code.py               # Phase 2 – Full pipeline on India Housing dataset
+└── Phase_03_code.py               # Phase 3 – Cross-market transfer + Bayesian regression
 ```
 
-## Running it
+---
+
+## Phase 1 — Regression Foundations (`part1_regression_pipeline.py`)
+
+**Dataset:** Ames Housing (Kaggle) — 1,460 rows, 79 features  
+**Target:** `SalePrice` (log-transformed via `log1p`)
+
+### What it does
+Derives and implements three regression estimators purely in NumPy, then verifies each against scikit-learn:
+
+- **OLS** — Normal equation: `β̂ = (XᵀX)⁻¹ Xᵀy`
+- **Ridge** — Closed form with L2 penalty: `β̂ = (XᵀX + λI)⁻¹ Xᵀy`
+- **Lasso** — Coordinate descent with soft-thresholding (no closed form due to non-differentiable L1 penalty)
+
+### Key functions
+
+| Function | Description |
+|---|---|
+| `load_ames(path)` | Load CSV, impute medians, standardise, return `(X, y)` |
+| `ols(X, y)` | OLS via `lstsq` (numerically stable normal equation) |
+| `ridge(X, y, lam)` | Ridge closed form; intercept not penalised |
+| `lasso_cd(X, y, lam)` | Lasso coordinate descent with soft-threshold operator |
+| `kfold_cv(...)` | 5-fold CV for any of the three estimators |
+| `verify_against_sklearn(...)` | MAE comparison vs scikit-learn |
+| `ridge_reg_path(X, y)` | Ridge coefficients over a log-spaced λ grid |
+
+### Running
 
 ```bash
-pip install -r requirements.txt
-
-# Phase 1 needs the Kaggle CSV (see below) saved as
-# phase1_regularised_regression/india_house_price.csv
-python phase1_regularised_regression/house_price_regression.py
-
-# Phases 2 and 3 are self-contained
-python phase2_city_stratified/city_stratified_pipeline.py
-python phase3_cross_market_transfer/cross_market_transfer.py
+# Place Kaggle train.csv in the same directory, then:
+python part1_regression_pipeline.py
 ```
 
-Each script writes its plots to its own `figures/` folder. Seeds are fixed
-(`42`), so reruns reproduce the committed results. Phases 2 and 3 run in
-under 10 seconds each.
+If `train.csv` is not found, synthetic data (1,460 × 36) is generated automatically for a demo run.
 
-## Data
+### Output
+Console table of 5-fold CV RMSE for OLS / Ridge / Lasso, sklearn verification results, and regularisation path data ready for plotting.
 
-| Phase | Data | Source |
-|---|---|---|
-| 1 | India House Price Prediction (500 rows, 8 cities) | [Kaggle – ankushpanday1](https://www.kaggle.com/datasets/ankushpanday1/india-house-price-prediction), CC0. Not committed; download it to run Phase 1. |
-| 2 | 7-city US dataset (4,650 rows) | **Synthetic**, generated to mirror the 7-Cities + Metro Combined structure, because that dataset is not freely redistributable. |
-| 3 | India + Ames, Iowa (500 + 1,460 rows) | **Synthetic proxies**: the India set replicates the Phase 1 schema, and the Ames set replicates the columns of the Ames Housing dataset (De Cock, 2011) with a price model calibrated to its ~$180k median. |
+---
 
-Because Phases 2 and 3 use simulated data, their results show how the methods
-behave under known, controlled market differences; they are not empirical
-claims about real US housing markets. Swapping in the real CSVs only requires
-replacing the generator call in each script's data section.
+## Phase 2 — India Housing Pipeline (`Phase_02_code.py`)
 
-## Bugs found and fixed in Phase 3
+**Dataset:** `india_house_price.csv` (ankushpanday1 / Kaggle)  
+**Target:** `Price` (log-transformed via `log1p`)
 
-The Phase 3 script's docstring documents each fix. In short:
+### What it does
+End-to-end pipeline on the India dataset including EDA, feature engineering, model training, hyperparameter tuning, and visualisation.
 
-1. Missing furnishing values were stored as the string `'None'` instead of a real null (NumPy fixed-width string dtype).
-2. City sample counts summed to 450, silently capping `n=500`.
-3. The Ames→India Bayesian score reused the India in-market score.
-4. A plot title claimed intervals widen on transfer; they do not.
-5. A misleading percentage change in interval width was removed.
-6. The "Ames in-market" Bayesian bar used the India-trained model, showing a transfer error (6.3) instead of the in-market one (0.15).
+### Pipeline steps
 
-## Next steps
+1. **EDA** — Missing value audit, target distribution, correlation heatmap, outlier boxplots, price-by-city bar chart
+2. **Feature engineering** — Median imputation for numeric columns (`Bathroom`, `Parking`, `Age`), mode imputation for `Furnishing`, one-hot encoding for `City`, `Location`, `Furnishing`, `Status`, StandardScaler
+3. **Models** — OLS (scratch), Ridge (scratch), Lasso (scikit-learn), all with 5-fold CV over a log-spaced λ grid
+4. **Hyperparameter selection** — Best λ chosen by minimum mean CV RMSE
+5. **Plots** — 8 plots saved to disk (see below)
 
-- Normalise the target per market (subtract each market's mean log-price) to measure slope transfer separately from the level offset.
-- Replace the synthetic Ames proxy with the real Ames Housing data.
-- Add a hierarchical prior with a market-level scale term so Bayesian intervals widen under shift.
+### Saved plots
 
-## Theory map
-
-| Method | MML chapter |
+| File | Description |
 |---|---|
-| OLS as MLE, normal equation | Ch. 9 |
-| Ridge / Lasso as MAP with Gaussian / Laplace priors | Ch. 9 |
-| Conjugate Bayesian linear regression, posterior predictive | Ch. 9.3–9.4 |
-| PCA via SVD | Ch. 10 |
-| Regularisation paths, convex optimisation | Ch. 7 |
+| `plot1_price_distribution.png` | Raw vs log-transformed price histograms |
+| `plot2_correlation_heatmap.png` | Correlation matrix of numeric features |
+| `plot3_outliers.png` | Boxplots for Price, Area, Age |
+| `plot4_price_by_city.png` | Average price by city |
+| `plot5_rmse_vs_lambda.png` | CV RMSE vs λ for Ridge and Lasso |
+| `plot6_regularisation_path.png` | Ridge coefficient paths (top 8 features) |
+| `plot7_predicted_vs_actual.png` | Scatter plots for all three models |
+| `plot8_lasso_feature_importance.png` | Top 15 Lasso non-zero coefficients |
 
-## Authors
+### Running
 
-**Pearl Mendapara** — B.Tech Computing & Mathematics, Mahindra University ·
-B.Sc. Data Science, IIT Madras
+```bash
+# Place india_house_price.csv in the same directory, then:
+python Phase_02_code.py
+```
 
-**Harshil Pansala** ([@Harshil1-0](https://github.com/Harshil1-0)) — collaborator
+---
+
+## Phase 3 — Transfer Learning & Bayesian Regression (`Phase_03_code.py`)
+
+**Datasets:** Synthetic India housing (n=500) + Ames Housing proxy  
+**Research question:** Which pricing features are *universal* (transfer across markets) vs *market-specific* (collapse on out-of-distribution data)?
+
+### Three contributions
+
+1. **Cross-market transfer experiment** — Train on India, test on Ames (and vice versa); measure RMSE degradation
+2. **Bayesian linear regression** — Conjugate Normal-Inverse-Gamma prior; posterior predictive mean and uncertainty intervals
+3. **Feature universality analysis** — Cosine similarity of weight vectors across markets; per-feature sign stability
+
+### Key components
+
+| Component | Description |
+|---|---|
+| `generate_india_dataset(n)` | Synthetic India dataset (8 cities, realistic price distributions) |
+| `preprocess_india(df)` | Imputation, one-hot encoding, StandardScaler |
+| `ridge_scratch(X, y, lam)` | Ridge closed form (reused from Phase 1) |
+| `BayesianLinearRegression` | Conjugate NIG model; `.fit()`, `.predict(return_std=True)` |
+| `universal_features` | 4 cross-market features: Area, BHK, Bathroom, Age |
+| PCA alignment | Aligns India feature space onto Ames via SVD before transfer |
+
+### Bugs fixed in this phase
+
+- **Bug 1** — `furnish` was a NumPy fixed-width string array; `None` was silently stored as the string `'None'`. Fixed by casting to `object` dtype before assignment.
+- **Bug 2** — City sample counts summed to 450, not 500. Fixed by adjusting city counts.
+- **Bug 3** — `bayes_r[3]` (Ames→India Bayesian transfer) incorrectly reused the in-market India score. Fixed by training a separate `blr_ames` model.
+- **Bug 4** — Plot title claimed "transfer produces wider uncertainty." Factually incorrect; σ stays flat while RMSE explodes. Title corrected to reflect the actual result.
+- **Bug 5** — Spurious percentage change in credible-interval width. Replaced with a direct comparison note.
+
+### Saved plots
+
+| File | Description |
+|---|---|
+| `p3_plot1_transfer_rmse.png` | In-market vs transfer RMSE bar chart |
+| `p3_plot2_weight_comparison.png` | Universal feature weights: India vs Ames |
+| `p3_plot3_bayesian_intervals.png` | Posterior predictive intervals (in-market vs transfer) |
+| `p3_plot4_pred_actual_grid.png` | 2×2 predicted vs actual grid |
+| `p3_plot5_universality_heatmap.png` | Feature universality heatmap |
+| `p3_plot6_reg_paths.png` | Ridge regularisation paths: India vs Ames |
+| `p3_plot7_uncertainty_vs_error.png` | Posterior σ vs absolute prediction error |
+| `p3_plot8_summary.png` | Full model comparison (OLS / Ridge / Bayesian, all scenarios) |
+
+### Running
+
+```bash
+python Phase_03_code.py
+```
+
+No external CSV is required — India data is generated synthetically; Ames data is proxied internally.
+
+---
+
+## Theory Connections
+
+All three phases are grounded in Deisenroth, Faisal & Ong — *Mathematics for Machine Learning* (MML, 2020):
+
+| Concept | MML Chapter | Implementation |
+|---|---|---|
+| OLS / MLE | Ch. 9 | Normal equation, `lstsq` |
+| Ridge / MAP (Gaussian prior) | Ch. 9 | Closed form with λI |
+| Lasso / MAP (Laplace prior) | Ch. 9 | Coordinate descent, soft-threshold |
+| Bayesian linear regression | Ch. 9.3–9.4 | Conjugate NIG posterior, predictive distribution |
+| Regularisation & optimisation | Ch. 7 | Convex loss, gradient, shrinkage paths |
+| PCA / SVD alignment | Ch. 10 | Feature space alignment for transfer |
+
+---
+
+## Dependencies
+
+```
+numpy
+pandas
+scikit-learn
+matplotlib
+seaborn
+```
+
+Install with:
+
+```bash
+pip install numpy pandas scikit-learn matplotlib seaborn
+```
+
+---
+
+## Data Sources
+
+- **Ames Housing** — [Kaggle: House Prices Advanced Regression](https://www.kaggle.com/c/house-prices-advanced-regression-techniques) (`train.csv`)
+- **India Housing** — [Kaggle: ankushpanday1 India House Price](https://www.kaggle.com/datasets/ankushpanday1/india-house-price) (`india_house_price.csv`)
+- **Phase 3 India data** — Generated synthetically via `generate_india_dataset()` (no download needed)
+
+---
+
+## Quick Results Reference
+
+| Phase | Model | Dataset | Notes |
+|---|---|---|---|
+| 1 | OLS / Ridge / Lasso | Ames (numeric only) | Sklearn-verified, 5-fold CV |
+| 2 | OLS / Ridge / Lasso | India (full features) | Best λ by CV, 8 diagnostic plots |
+| 3 | Ridge / Bayesian | India ↔ Ames transfer | Universality analysis, uncertainty calibration |
